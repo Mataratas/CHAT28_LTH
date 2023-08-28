@@ -12,7 +12,7 @@ CTCPServer::CTCPServer(const char* mod_name) {
 			_err_cnt++;
 			err_descr = "Could not create socket: "; err_descr += strerror(errno);
 			std::cout << err_descr << std::endl;
-			_log_ptr->write(err_descr);
+			_log_ptr->write(err_descr.c_str());
 			return;
 		}
 
@@ -24,7 +24,7 @@ CTCPServer::CTCPServer(const char* mod_name) {
 			close(_socket);
 			err_descr = "Could not set the socket option: "; err_descr += strerror(errno);
 			std::cout << err_descr << std::endl;
-			_log_ptr->write(err_descr);
+			_log_ptr->write(err_descr.c_str());
 			_err_cnt++;
 			return;
 		}
@@ -38,7 +38,7 @@ CTCPServer::CTCPServer(const char* mod_name) {
 			close(_socket);
 			err_descr = "Could not bind the address: "; err_descr += strerror(errno);
 			std::cout << err_descr << std::endl;
-			_log_ptr->write(err_descr);
+			_log_ptr->write(err_descr.c_str());
 			_err_cnt++;
 			return;
 		}
@@ -46,7 +46,7 @@ CTCPServer::CTCPServer(const char* mod_name) {
 			close(_socket);
 			err_descr = "Could not set the backlog: "; err_descr += strerror(errno);
 			std::cout << err_descr << std::endl;
-			_log_ptr->write(err_descr);
+			_log_ptr->write(err_descr.c_str());
 			_err_cnt++;
 			return;
 		}else {
@@ -235,12 +235,13 @@ auto CTCPServer::process_clients()->bool {
 #if defined(_WIN64) || defined(_WIN32)		
 		SOCKET _cl_socket;
 		SOCKADDR_IN addr_c;
+		int addrlen = sizeof(addr_c);
 #elif defined(__linux__) 
 		int _cl_socket;
 		struct sockaddr_in addr_c;
+		socklen_t addrlen = sizeof(addr_c);
 #endif
 		char cl_ip[15]{(char)'/0'};
-		int addrlen = sizeof(addr_c);
 		_cl_socket = accept(_socket, (struct sockaddr*)&addr_c, &addrlen);
 
 #ifdef __linux__
@@ -248,7 +249,7 @@ auto CTCPServer::process_clients()->bool {
 			close(_socket);
 			info = "Could not accept the client: "; info += strerror(errno);
 			std::cout << info << std::endl;
-			_log.write(info.c_str());
+			_log_ptr->write(info.c_str());
 
 			_err_cnt++;
 			return false;

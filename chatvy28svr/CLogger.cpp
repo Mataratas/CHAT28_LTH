@@ -1,4 +1,4 @@
-#include "ÑLogger.h"
+#include "CLogger.h"
 #include<iostream>
 //================================================================================
 CLogger::CLogger(const char* prefix) :_log_pref(prefix){
@@ -72,7 +72,9 @@ auto CLogger::write(const char* line) -> bool {
 	auto ts = std::chrono::system_clock::to_time_t(now);
 
 	char mbstr[20]{'\0'};
-#pragma warning(suppress : 4996).
+#if defined(_WIN64) || defined(_WIN32)	
+#pragma warning(suppress : 4996)
+#endif
 	if(std::strftime(mbstr, sizeof(mbstr), "%d.%m.%Y %H:%M:%S", std::localtime(&ts)))
 		_file <<"["<< mbstr << "] ";
 	else

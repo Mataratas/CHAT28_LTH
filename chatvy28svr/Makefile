@@ -13,7 +13,7 @@ chatvy28srv.o: $(SRC_SVR)
 HEADERS =  /usr/include/mysql/
 LIBS = /usr/lib/x86_64-linux-gnu
 chatvy28srv.o: $(SRC_SVR) 
-	g++ -I$(HEADERS) -L$(LIBS) -o $@ $^ -lmysqlpp -lmysqlclient -lpthread -ldl -lssl -lcrypto -lresolv -lm -lrt
+	g++ -I$(HEADERS) -L$(LIBS) -std=c++17 -o $@ $^ -lmysqlpp -lmysqlclient -lpthread -ldl -lssl -lcrypto -lresolv -lm -lrt
 endif
 
 clean:

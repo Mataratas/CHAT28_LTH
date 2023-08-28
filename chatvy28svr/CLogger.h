@@ -13,7 +13,7 @@ public:
 	~CLogger();
 	CLogger(const CLogger&) = delete;
 	CLogger& operator=(const CLogger&) = delete;
-	auto write(const char*) -> bool;
+	auto write(const char* line) -> bool;
 	auto read_line(std::string& l,int idx=-1)->bool; //idx:	-1 -> read last line, 0 -> first line
 
 private:

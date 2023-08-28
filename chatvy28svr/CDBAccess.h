@@ -20,7 +20,7 @@
 
 #include "CMessage.h"
 #include "CUser.h"
-#include "ÑLogger.h"
+#include "CLogger.h"
 
 #include "../utils.h"
 
