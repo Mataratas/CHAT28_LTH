@@ -74,8 +74,10 @@ auto CLogger::write(const char* line) -> bool {
 	char mbstr[20]{'\0'};
 #if defined(_WIN64) || defined(_WIN32)	
 #pragma warning(suppress : 4996)
+	if (std::strftime(mbstr, sizeof(mbstr), "%d.%m.%Y %H:%M:%S", std::localtime(&ts)))
+#elif defined(__linux__)
+	if (std::strftime(mbstr, sizeof(mbstr), "%d.%m.%Y %H:%M:%S", std::localtime(&ts)))
 #endif
-	if(std::strftime(mbstr, sizeof(mbstr), "%d.%m.%Y %H:%M:%S", std::localtime(&ts)))
 		_file <<"["<< mbstr << "] ";
 	else
 		_file << "[No timestamp      ] ";
