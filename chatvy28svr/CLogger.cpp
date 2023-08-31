@@ -5,8 +5,8 @@ CLogger::CLogger(const char* prefix) :_log_pref(prefix){
 	_file.open(_get_file_name().c_str(), std::ios::in | std::ios::app); //r+
 	if (!_file)
 		_init_ok = false;
-
-	_init_ok = true;
+	else
+		_init_ok = true;
 #ifdef _DEBUG
 	std::cout << __FUNCTION__ << ": initialization " << (_init_ok ? "OK" : "FAILED") << std::endl;
 #endif // _DEBUG
@@ -53,8 +53,9 @@ auto CLogger::read_line(std::string& l, int idx) -> bool {
 			_file.getline(mbstr, MAX_LOG_LINE_LEN);
 			l = mbstr;
 		}
-		else
-			std::cout << "Not yet implemented\n";
+		else {
+			return false;
+		}			
 	}
 	_mtxs.unlock_shared();
 	return l.size() > 0;
