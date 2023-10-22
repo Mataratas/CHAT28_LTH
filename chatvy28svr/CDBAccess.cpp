@@ -4,6 +4,7 @@
 //==========================================================================================
 CDBAccess::CDBAccess() {
    _init_db_ctx();
+   _log_ptr = std::make_shared<CLogger>("dbaccess_");
 }
 //----------------------------------------------------------------------------------------------------------
 CDBAccess::~CDBAccess() {
@@ -87,6 +88,15 @@ auto CDBAccess::_database_ready() -> DRC {
             std::cout << "Failed to create table user_data:" << mysql_error(_mysql) << std::endl;
             return eFailedToCreateTable;
         }
+
+        instr = "CREATE TABLE if not exists "; instr += _dbname;
+        instr += ".user_ban (user_id INT NOT NULL REFERENCES users(id),deadline date not null)";
+        if (mysql_real_query(_mysql, instr.c_str(), instr.size())) {
+            std::cout << "Failed to create table user_ban:" << mysql_error(_mysql) << std::endl;
+            return eFailedToCreateTable;
+        }
+
+
 
         instr = "CREATE TRIGGER "; instr += _dbname; instr += ".reserv_new_user_data AFTER INSERT ON users for each row begin insert into user_data(user_id, pwdhash) values(new.id, NULL); end;";
         if (mysql_real_query(_mysql, instr.c_str(),instr.size())) {
@@ -195,7 +205,6 @@ auto CDBAccess::login_used(const char* login)->bool {
         return false;
     }else {
         MYSQL_RES* res{ nullptr };
-        MYSQL_ROW row;
         if (res = mysql_store_result(_mysql)) {
             auto r_cnt = mysql_num_rows(res);
             mysql_free_result(res);
@@ -212,13 +221,14 @@ auto CDBAccess::login_used(const char* login)->bool {
 
 }
 //----------------------------------------------------------------------------------------------------------
-auto CDBAccess::user_pwdh_ok(const char* name, const std::string& pwd_hash) -> bool {
-    std::string instr = "select login, ud.pwdhash from ";
+auto CDBAccess::user_auth_ok(const char* name, const std::string& pwd_hash, std::string& user_id) -> bool {
+    std::string instr = "select id, login, ud.pwdhash from ";
     instr += _dbname;
     instr += ".users usr join ";
     instr += _dbname;
     instr += ".user_data ud on usr.id = ud.user_id where usr.login = '";
     instr += name;
+    instr += "' and  ud.pwdhash='"; instr += pwd_hash;
     instr += "' limit 1";
     if (mysql_real_query(_mysql, instr.c_str(), instr.size())) {
         _last_error = "Failed to execute query:"; _last_error += mysql_error(_mysql);
@@ -228,10 +238,15 @@ auto CDBAccess::user_pwdh_ok(const char* name, const std::string& pwd_hash) -> b
         MYSQL_RES* res{ nullptr };
         MYSQL_ROW row;
         if (res = mysql_store_result(_mysql)) {
-            if (row = mysql_fetch_row(res)) {
+            auto r_cnt = mysql_num_rows(res);
+            if (r_cnt) {
+                if (row = mysql_fetch_row(res))
+                    user_id = row[0];
+                
                 mysql_free_result(res);
-                return pwd_hash == row[4];
-            }
+                return true;
+            }else
+                mysql_free_result(res);
             return false;
         }
         else {
@@ -301,6 +316,73 @@ auto CDBAccess::get_user(const char* login, uint64_t& id, std::string& name, std
     }
 }
 //----------------------------------------------------------------------------------------------------------
+auto CDBAccess::ban_user(const char* user_id, const char* action)->bool{
+    if (*action == '1') {
+        std::string instr = "delete from "; instr += _dbname; instr += ".user_ban where user_id = "; instr += user_id;
+        if (mysql_real_query(_mysql, instr.c_str(), instr.size())) {
+            _last_error = "Failed to execute query:"; _last_error += mysql_error(_mysql);
+            return false;
+        }
+
+        instr = "insert into "; instr += _dbname; instr += ".user_ban values("; instr += user_id; instr += ",date_add(now(), interval 1 day))";
+        if (mysql_real_query(_mysql, instr.c_str(), instr.size())) {
+            _last_error = "Failed to execute query:"; _last_error += mysql_error(_mysql);
+            return false;
+        }
+    }
+    else {
+        std::string instr = "delete from "; instr += _dbname; instr += ".user_ban where user_id = "; instr += user_id;
+        if (mysql_real_query(_mysql, instr.c_str(), instr.size())) {
+            _last_error = "Failed to execute query:"; _last_error += mysql_error(_mysql);
+            return false;
+        }
+    }
+    return true;
+}
+//----------------------------------------------------------------------------------------------------------
+auto CDBAccess::get_users(std::vector<std::string>& v) -> bool const {
+    std::string instr = "select id, login, name, email, ud.pwdhash, ifnull(ub.deadline,\"\") as banned_till from ";
+    instr += _dbname;
+    instr += ".users usr join ";
+    instr += _dbname;
+    instr += ".user_data ud on usr.id = ud.user_id left join ";
+    instr += _dbname;
+    instr += ".user_ban ub on usr.id =ub.user_id";
+
+    if (mysql_real_query(_mysql, instr.c_str(), instr.size())) {
+        _last_error = "Failed to execute query:"; _last_error += mysql_error(_mysql);
+ /*       _log_ptr->write(_last_error.c_str());
+        _log_ptr->write(instr.c_str());*/
+
+        return false;
+    }
+    else {
+        MYSQL_RES* res{ nullptr };
+        MYSQL_ROW row;
+        size_t num_fields{};
+        if (res = mysql_store_result(_mysql)) {
+            num_fields = mysql_num_fields(res);
+            while (row = mysql_fetch_row(res)) {
+                std::string str_row;
+                for (size_t i = 0; i < num_fields; i++)
+                {
+                    str_row += row[i]; str_row += '~';
+                }
+                str_row += '\0';
+                v.emplace_back(str_row);
+            }
+            mysql_free_result(res);
+            return v.size()>0;
+        }
+        else {
+            _last_error = "Failed to execute query:"; _last_error += mysql_error(_mysql);
+            return false;
+        }
+    }
+
+
+}
+//----------------------------------------------------------------------------------------------------------
 auto CDBAccess::set_user_attr(const uint64_t& id, const char* attr,const char *new_value) -> bool {
     std::string instr = "update ";
     instr += _dbname;
@@ -343,6 +425,32 @@ auto CDBAccess::set_user_pwdhash(const uint64_t& id, const char* new_pwdh) -> bo
     }
     else
         return true;
+}
+//----------------------------------------------------------------------------------------------------------
+auto CDBAccess::user_is_banned(const char* usr_id, std::string& ban) -> bool{
+    std::string instr = "select deadline from ";
+    instr += _dbname;
+    instr += ".user_ban where user_id = "; instr += usr_id; instr += " limit 1";
+    if (_query_exec(instr)) {
+        MYSQL_RES* res{ nullptr };
+        MYSQL_ROW row;
+        if (res = mysql_store_result(_mysql)) {
+            if (row = mysql_fetch_row(res)) {
+                ban = row[0];
+                mysql_free_result(res);
+                return true;
+            }else {
+                mysql_free_result(res);
+                return false;
+            }
+        }else{
+            _last_error = "Failed to execute query:"; _last_error += mysql_error(_mysql);
+            return false;
+        }
+    }else
+        return false;
+    return true;
+
 }
 //----------------------------------------------------------------------------------------------------------
 auto CDBAccess::pack_users(const char* client_id, std::string& str_res) ->bool const{   
@@ -395,6 +503,79 @@ auto CDBAccess::read_users(std::unordered_map<size_t, std::shared_ptr<CUser>>& u
                 auto usr = std::make_shared<CUser>(name.c_str(), pwd_hash.c_str());
                 usr->set_id(id);
                 users.emplace(std::make_pair(cHasher{}(name), usr));
+            }
+            mysql_free_result(res);
+        }
+        else {
+            _last_error = "Failed to execute query:"; _last_error += mysql_error(_mysql);
+        }
+    }
+}
+//----------------------------------------------------------------------------------------------------------
+auto CDBAccess::get_all_msgs(std::map<std::string, std::shared_ptr<CMessage>>& msg_pool) -> void {
+    std::string t_msg{ _dbname }; t_msg += ".messages msg ";
+    std::string instr = "select msg.id as msg_id, msg.body, usrsnd.login from_name, usrrcv.login to_name, msg.created ,msg.from_id, to_id, ms.status, ms.ts_changed from ";
+    //std::string instr = "select msg.id as msg_id, msg.created , usrsnd.login from_name, usrrcv.login to_name, msg.body, ms.status, ms.ts_changed, msg.from_id, to_id from ";
+    instr += t_msg;
+    instr += "inner join ";instr += _dbname;instr += ".users usrsnd on usrsnd.id = msg.from_id ";
+    instr += "inner join "; instr += _dbname; instr += ".users usrrcv on usrrcv.id = msg.to_id ";
+    instr += "inner join "; instr += _dbname; instr += ".message_state ms on ms.message_id = msg.id";
+    if (mysql_real_query(_mysql, instr.c_str(), instr.size())) {
+        _last_error = "Failed to execute query:"; _last_error += mysql_error(_mysql);
+#ifdef _DEBUG
+        std::cout << __FUNCTION__ << ":" << _last_error << std::endl;
+        _log_ptr->write(_last_error.c_str());
+        _log_ptr->write(instr.c_str());
+#endif // _DEBUG
+
+        return;
+    }
+    else {
+        MYSQL_RES* res{ nullptr };
+        MYSQL_ROW row;
+        std::string name, pwd_hash;
+        uint64_t id;
+
+        if (res = mysql_store_result(_mysql)) {
+            msg_pool.clear();
+            while (row = mysql_fetch_row(res)) {
+                auto msg_ptr = std::make_shared<CMessage>(row[1], row[2], row[3]);
+                msg_ptr->set_ts(row[4]);
+                msg_ptr->set_message_id(row[0]);
+                msg_pool.insert(std::make_pair(row[0], msg_ptr));
+            }
+            mysql_free_result(res);
+        }
+        else {
+            _last_error = "Failed to execute query:"; _last_error += mysql_error(_mysql);
+        }
+    }
+}
+//----------------------------------------------------------------------------------------------------------
+auto CDBAccess::get_user_msgs(const char* id, const std::string& usrname, std::map<std::string, std::shared_ptr<CMessage>>& msg_pool)->void {
+    std::string instr = "select ms.ts_changed,msg.body,usr.login as sender,ms.message_id from ";
+    instr += _dbname;
+    instr += ".messages msg inner join ";
+    instr += _dbname;
+    instr += ".users usr on usr.id = msg.from_id ";
+    instr += "inner join "; instr += _dbname; instr += ".message_state ms on ms.message_id = msg.id ";
+    instr += "where msg.to_id ="; instr += id;
+    instr += " or msg.from_id = "; instr += id;
+    if (mysql_real_query(_mysql, instr.c_str(), instr.size())) {
+        _last_error = "Failed to execute query:"; _last_error += mysql_error(_mysql);
+        return;
+    }
+    else {
+        MYSQL_RES* res{ nullptr };
+        MYSQL_ROW row;
+
+        if (res = mysql_store_result(_mysql)) {
+            msg_pool.clear();
+            while (row = mysql_fetch_row(res)) {
+                auto msg_ptr = std::make_shared<CMessage>(row[1], row[2], usrname.c_str());
+                msg_ptr->set_ts(row[0]);
+                msg_ptr->set_message_id(row[3]);
+                msg_pool.insert(std::make_pair(row[3], msg_ptr));
             }
             mysql_free_result(res);
         }

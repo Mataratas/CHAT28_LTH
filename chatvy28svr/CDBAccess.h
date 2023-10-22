@@ -71,20 +71,27 @@ public:
     auto get_last_error() -> const char* const { return _last_error.c_str();};
     auto add_user(const char *l, uint64_t&, const char *n=nullptr, const char *e=nullptr)-> bool;
     auto get_user(const char* , uint64_t&, std::string&, std::string&, std::string&) -> bool;
+    auto ban_user(const char* user_id,const char*)->bool;
+    auto get_users(std::vector<std::string>&) -> bool const;
+    
     auto get_user_msgs(const uint64_t&, const std::string&, std::map<std::string, std::shared_ptr<CMessage>>&)->void;
+    auto get_user_msgs(const char*, const std::string&, std::map<std::string, std::shared_ptr<CMessage>>&) -> void;
+    auto get_all_msgs(std::map<std::string, std::shared_ptr<CMessage>>&) -> void;
+
 
     auto read_users(std::unordered_map<size_t, std::shared_ptr<CUser>>&)->void;
     auto pack_users(const char* client_id, std::string& ) -> bool const;
     auto write_users(const std::unordered_map<size_t, std::shared_ptr<CUser>>&) -> void;
 
 
-    auto user_pwdh_ok(const char*, const std::string&) -> bool;
+    auto user_auth_ok(const char*, const std::string&, std::string&) -> bool;
     auto user_pwdh_ok(const uint64_t&, const std::string&) -> bool;
-
     auto login_used(const char*) -> bool;
+
     auto set_user_attr(const uint64_t&, const char*, const char*) -> bool;
     auto set_msg_state(const char*, const char*) -> bool;
     auto set_user_pwdhash(const uint64_t&, const char*) -> bool;
+    auto user_is_banned(const char*, std::string&) -> bool;
 
     //auto deliver_msg(const std::shared_ptr<CMessage> &msg, const uint64_t& from_id, const uint64_t& to_id=0)->size_t;
     auto deliver_msg(const char* msg, const char* from_id, const char* to_id = nullptr) -> bool;
@@ -105,6 +112,7 @@ private:
     std::string _PWD{"1234"};
     std::string _last_error;
     DRC _last_ret_code;
+    std::shared_ptr<CLogger> _log_ptr{nullptr};
 
 };
 using DBCTX = CDBAccess;

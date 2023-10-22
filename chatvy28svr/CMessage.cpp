@@ -23,10 +23,11 @@ CMessage::CMessage(const char* msg) {
 auto CMessage::serialize_msg() -> const std::string {
 	std::string res;
 	res.reserve(1024);
-	res += timestamp; res.push_back('#');
-	res += body; res.push_back('#');
-	res += sender; res.push_back('#');
-	res += message_id; res.push_back('#');
+	res += timestamp; res.push_back('~');
+	res += sender; res.push_back('~');
+	res += reciever; res.push_back('~');
+	res += body; res.push_back('~');
+	res += message_id; res.push_back('\0');
 	return res;
 }
 //---------------------------------------------------------------------------------------------

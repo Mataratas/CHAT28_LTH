@@ -37,6 +37,7 @@ private:
 	std::map<std::string, std::shared_ptr<CMessage>> _msg_pool;
 	std::shared_ptr<LOG> _log_ptr;
 	std::shared_mutex _mtxs;
+	std::vector<std::string> _buffer;
 };
 
 using CLC = CClientConnection;

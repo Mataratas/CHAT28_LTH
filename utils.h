@@ -1,6 +1,7 @@
 #pragma once
 #include <stdio.h>
 #include <iostream>
+#include <vector>
 
 #ifdef __linux__
 
@@ -69,4 +70,5 @@ struct cHasher {
 auto getPassword(std::string&) -> void;
 auto print_os_data() -> void;
 auto get_login_by_id_from_packed_string(const std::string& sid) -> const std::string;
+auto split_msg_data(const std::string& r, std::vector<std::string>& v, const char* div="~")->bool;
 

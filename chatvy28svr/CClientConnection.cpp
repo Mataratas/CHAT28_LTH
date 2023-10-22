@@ -46,7 +46,82 @@ auto CClientConnection::process_client_msg(
 	IOMSG& in, bool& exit_loop) -> bool {
 
 	bool existing_user{ false };
+#ifdef DEBUG
+	std::cout<<<<"client msg.mtype = " << msg.mtype << std::endl;
+#endif // DEBUG
+
 	switch (in.mtype) {
+	case eAuthAdmin: {
+		in.mtype = eUserNextAdmin;
+		memset(in.body, '\0', MSG_LENGTH);
+		if (_hDB->get_users(_buffer)) {
+			auto item = _buffer.begin();
+			strcpy(in.body, (*item).c_str());
+			_buffer.erase(item);
+		}else {
+			in.mtype = eNoMsg;
+		}
+		break;
+	}
+	case eBatchAuth:
+	{
+		std::string user_id;
+		if (_hDB->user_auth_ok(in.user, in.body, user_id)) {
+			std::string ban_dl;
+			clear_message(in);
+			strcpy(in.user_id, user_id.c_str());
+			if (_hDB->user_is_banned(user_id.c_str(), ban_dl)) {
+				in.mtype = eError;
+				ban_dl.insert(0, "Sorry, you are banned till:");
+				strcpy(in.body, ban_dl.c_str());
+			}else {
+				in.mtype = eAuthOK;
+			}
+		}
+	}
+		break;	
+	case eBatchReg:
+	{
+		uint64_t id;
+		if (_hDB->add_user(in.user,id)) {
+			if (_hDB->set_user_pwdhash(id, in.body)) {
+				memset(in.body, '\0', MSG_LENGTH);
+				in.mtype = eAuthOK;
+				strcpy(in.user_id, std::to_string(id).c_str());
+			}else {
+				in.mtype = eError;
+				memset(in.body, '\0', MSG_LENGTH);
+				memcpy(in.body, _hDB->get_last_error(), MSG_LENGTH);
+			}
+		}else {
+			memset(in.body, '\0', MSG_LENGTH);
+			in.mtype = eExistingUser;
+		}
+	}
+	break;
+
+	
+	case eUserNextAdmin:
+	{
+		in.mtype = eUserNextAdmin;
+		memset(in.body, '\0', MSG_LENGTH);
+		if (_buffer.size()) {
+			auto item = _buffer.begin();
+			strcpy(in.body, (*item).c_str());
+			_buffer.erase(item);
+		}else
+			in.mtype = eNoMsg;
+	}
+		break;
+	case eSetUserBanFlag:
+	{
+		if (_hDB->ban_user(in.user,in.body))
+			in.mtype = eUserBanFlagSet;
+		else
+			in.mtype = eNone;
+	}
+		break;
+
 	case eAuth:
 		in.mtype = eWelcome;
 		memset(in.body, '\0', MSG_LENGTH);
@@ -147,8 +222,27 @@ auto CClientConnection::process_client_msg(
 			}
 		}
 		break;
+	case eGetMsgAdmin:
+		_hDB->get_all_msgs(_msg_pool);
+		if (_msg_pool.empty()) {
+			clear_message(in);
+			in.mtype = eNoMsg;
+			strcpy(in.body, "No messages found.\n");
+		}else {
+			clear_message(in);
+			auto curr_msg = _msg_pool.begin();
+			in.mtype = eMsgNext;
+			strcpy(in.body, curr_msg->second->serialize_msg().c_str());
+			_msg_pool.erase(curr_msg);
+		}
+
+		break;
 	case eGetUserMsg:
-		_hDB->get_user_msgs(_usr_db_id, _user, _msg_pool);
+		if(_usr_db_id==0)
+			_hDB->get_user_msgs(in.user_id, _user, _msg_pool);
+		else
+			_hDB->get_user_msgs(_usr_db_id, _user, _msg_pool);
+
 		if (_msg_pool.empty()) {
 			clear_message(in);
 			in.mtype = eNoMsg;
@@ -201,18 +295,19 @@ auto CClientConnection::process_client_msg(
 
 	case eSendToAll:
 	{
-		auto msg_sent = _hDB->deliver_msg(in.body, in.user);
-		clear_message(in);
-		in.mtype = eMsgDelivered;
-		if (msg_sent) {
-			strcpy(in.body, "messages sent OK\n");
-		}
-		else
-			strcpy(in.body, "Failed to send messages\n");
+		auto msg_sent = _hDB->deliver_msg(in.body, in.user_id);
+		if(msg_sent){
+			clear_message(in);
+			in.mtype = eMsgDelivered;
+		}else {
+			in.mtype = eError;
+			strcpy(in.body, _hDB->get_last_error());
+		}			
 		break;
 	}
 	case eSendToUser:
 	{
+
 		std::string available_users;
 		if (!_hDB->pack_users(in.user, available_users)) {
 			clear_message(in);
@@ -227,7 +322,12 @@ auto CClientConnection::process_client_msg(
 	}
 	case eSendToUserMsgReady:
 	{
-		if (_hDB->deliver_msg(in.body, std::to_string(_usr_db_id).c_str(), in.user)) {
+		bool res{ false };
+		if(_usr_db_id==0)
+			res = _hDB->deliver_msg(in.body, in.user, in.user_id);
+		else
+			res = _hDB->deliver_msg(in.body, std::to_string(_usr_db_id).c_str(), in.user);		
+		if (res) {
 			clear_message(in);
 			in.mtype = eMsgDelivered;
 			strcpy(in.body, "The message sent\n");
@@ -235,13 +335,16 @@ auto CClientConnection::process_client_msg(
 		else {
 			clear_message(in);
 			in.mtype = eErrMsgNotDelivered;
-			strcpy(in.body, "Failed to send message\n");
+			strcpy(in.body, _hDB->get_last_error());
 		}
 		break;
 	}
 	case eQuit:
 		_log_ptr->write("Client terminated connection");
 		exit_loop = true;
+#ifdef _DEBUG
+		std::cout << "Client terminated connection"<< std::endl;
+#endif // _DEBUG
 		break;
 	}
 
@@ -293,6 +396,6 @@ auto CClientConnection::_login_used(const std::string& uname) -> bool {
 }
 //--------------------------------------------------------------------------------------
 auto CClientConnection::_is_valid_user_pwd(const std::string& pwd) -> bool {
-	return _hDB->user_pwdh_ok(_user.c_str(), pwd);
+	return _hDB->user_pwdh_ok(_usr_db_id, pwd);
 }
 //--------------------------------------------------------------------------------------
